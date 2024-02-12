@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+muon_mass = .106
+
 def generate_cosmic_muon():
     step = .0005
     angular_range = np.pi/2*np.arange(0,1,step)
@@ -8,16 +10,14 @@ def generate_cosmic_muon():
     angular_distribution = angular_distribution/np.sum(angular_distribution) #Normalisation
     theta = np.random.choice(angular_range,p = angular_distribution)
 
-    phi = 2*np.pi*np.random.random() #Azimuth distribution
+    phi = 2*np.pi*np.random.random() #Azimuthal distribution
 
-    E_range = 10*np.arange(0,1,step) #Muon energy up to 10 GeV
+    E_range = 10*np.arange(muon_mass,1,step) #Muon energy up to 10 GeV
     E_distribution = np.power(E_range + 4.29, -3)/(1 + E_range/854) #Approximate muon energy distribution not including angular dependence
     E_distribution = E_distribution/np.sum(E_distribution)
     Energy = np.random.choice(E_range,p = E_distribution)
     
     return Energy, theta, phi
-
-muon_mass = .106
 
 class Muon:
 
@@ -41,6 +41,7 @@ class Muon:
             electron_mass = .511*10**-3 #In units of GeV/c^2
             n_e = 3.33*10**23 #Electrons per cm^3
             I = 64.7*10**-9 #Mean excitation energy of polyvinyltoluene
+            kB = 13 #Birks coefficient, in units of cm/GeV
             
             if self.energy > muon_mass:
                 beta = np.sqrt(1-1/np.square(self.energy/muon_mass))
@@ -49,8 +50,10 @@ class Muon:
 
                 W_max = 2*electron_mass*(beta*gamma)**2/(1+2*gamma*electron_mass/muon_mass+(electron_mass/muon_mass)**2) #Maximum energy transfer
                 dE = K*n_e/(beta)**2*(np.log(2*electron_mass*(beta*gamma)**2*W_max/I**2)/2-(beta)**2)*dx #Bethe formula without corrections
+                dL = (dE/dx)/(1+kB*dE/dx) #Birks law
             else:
                 dE = 0
+                dL = 0
                 dx = 0
                 gamma = 1
                 self.energy = muon_mass
@@ -71,9 +74,9 @@ class Muon:
             self.time += 1
 
             if self.decayed: #Outputs energy when decaying
-                return muon_mass
+                return muon_mass, muon_mass #Placeholder until kinematic computation of decay
             if dE >= 0: #Outputs energy when losing energy
-                return dE
+                return dE, dL
             
 
 #Simulate muons travelling through the detector, with simulated spacial resolution of 1cm and time steps of 1cm/c
@@ -93,9 +96,12 @@ Detection_efficiency = .1 #Probability a photon is detected by SiPM after creati
 
 dt = 1 #Time steps at 1cm/c
 
+print(My_muon.energy,"GeV")
+
+
 while My_muon.in_matrix and not My_muon.decayed: #Simulating muon through detector, first interating muon position before recording said position with deposited energy
 
-    Energy = My_muon.iterate(dt)
+    Energy,Light = My_muon.iterate(dt)
     x = np.floor(My_muon.position[0]).astype(int)
     y = np.floor(My_muon.position[1]).astype(int)
     z = np.floor(My_muon.position[2]).astype(int)
@@ -105,16 +111,17 @@ while My_muon.in_matrix and not My_muon.decayed: #Simulating muon through detect
     
     if x >= 0 and x < Detector_dimension[0] and y >= 0 and y < Detector_dimension[1] and z >= 0 and z < Detector_dimension[2]:
         Detector_space[x,y,z] = np.add(Energy,Detector_space[x,y,z]) #Energy inputted into each cell
-        Detector_output[i,j] = np.add(Energy,Detector_output[i,j]) #Energy inputted into each detector
+        Detector_output[i,j] = np.add(Light,Detector_output[i,j]) #Energy inputted into each detector
         
     else:
         print("exit")
         My_muon.in_matrix = False
 
+print(My_muon.energy,"GeV")
 
 if  My_muon.decayed:
     print("Decayed")
-print(np.transpose(Detector_output))
+print(np.transpose(Detector_output)*Scintillation_efficiency*Detection_efficiency)
 
 x,y,z = np.indices((Detector_dimension[0]+1,Detector_dimension[1]+1,Detector_dimension[2]+1)) #Prepare coordinates
 colors = np.zeros(Detector_space.shape + (3,)) #Prepare colors
